@@ -32,8 +32,8 @@ dependencies:
     sdk: flutter
   supabase_flutter: ^2.0.0 # Cek versi terbaru
   provider: ^6.0.0 # Cek versi terbaru
-  video_player: ^2.0.0 # Cek versi terbaru
-  chewie: ^1.5.0 # Cek versi terbaru (sesuaikan dengan video_player)
+  # video_player: ^2.0.0 # Cek versi terbaru
+  # chewie: ^1.5.0 # Cek versi terbaru (sesuaikan dengan video_player)
   flutter_dotenv: ^5.0.0 # Cek versi terbaru
   intl: ^0.19.0 # Cek versi terbaru (untuk format tanggal/waktu)
 
@@ -65,7 +65,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - .env
-  #   - images/a_dot_burr.jpeg
+    # - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
   # An image asset can refer to one or more resolution-specific "variants", see
