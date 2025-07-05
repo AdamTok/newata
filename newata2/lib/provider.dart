@@ -2,91 +2,161 @@
 // STATE MANAGEMENT (PROVIDER)
 // =================================================================
 
+// =================================================================
+// STATE MANAGEMENT (PROVIDER)
+// =================================================================
+
 import 'package:CCTV_App/main.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppState extends ChangeNotifier {
   bool _isLoading = false;
-  String? _deviceId;
+  User? _currentUser;
+
+  List<Map<String, dynamic>> _userDevices = [];
+  Map<String, dynamic>? _selectedDevice;
+
   List<Map<String, dynamic>> _events = [];
   Map<String, dynamic>? _deviceStatus;
-  User? _currentUser;
 
   RealtimeChannel? _eventsChannel;
   RealtimeChannel? _deviceStatusChannel;
 
   bool get isLoading => _isLoading;
-  String? get deviceId => _deviceId;
+  User? get currentUser => _currentUser;
+  List<Map<String, dynamic>> get userDevices => _userDevices;
+  Map<String, dynamic>? get selectedDevice => _selectedDevice;
   List<Map<String, dynamic>> get events => _events;
   Map<String, dynamic>? get deviceStatus => _deviceStatus;
-  User? get currentUser => _currentUser;
+
+  String? get selectedDeviceId => _selectedDevice?['device_id'];
 
   AppState() {
     _currentUser = supabase.auth.currentUser;
+    if (_currentUser != null) {
+      fetchUserDevices();
+    }
+
     supabase.auth.onAuthStateChange.listen((data) {
       final session = data.session;
       _currentUser = session?.user;
-      if (_currentUser == null) {
+      if (_currentUser != null) {
+        fetchUserDevices();
+      } else {
         clearState();
       }
       notifyListeners();
     });
   }
 
-  void _unsubscribeFromChannels() {
-    if (_eventsChannel != null) {
-      supabase.removeChannel(_eventsChannel!);
-      _eventsChannel = null;
-    }
-    if (_deviceStatusChannel != null) {
-      supabase.removeChannel(_deviceStatusChannel!);
-      _deviceStatusChannel = null;
+  void _setLoading(bool value) {
+    if (_isLoading != value) {
+      _isLoading = value;
+      notifyListeners();
     }
   }
 
+  void _unsubscribeFromChannels() {
+    _eventsChannel?.unsubscribe();
+    _deviceStatusChannel?.unsubscribe();
+    _eventsChannel = null;
+    _deviceStatusChannel = null;
+  }
+
   void clearState() {
-    _deviceId = null;
+    _userDevices.clear();
+    _selectedDevice = null;
     _events.clear();
     _deviceStatus = null;
     _unsubscribeFromChannels();
     notifyListeners();
   }
 
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
-  }
-
-  Future<bool> setDeviceIdAndFetchData(String deviceId) async {
+  Future<void> fetchUserDevices() async {
+    if (_currentUser == null) return;
     _setLoading(true);
     try {
       final response = await supabase
+          .from('user_devices')
+          .select()
+          .eq('user_id', _currentUser!.id)
+          .order('created_at', ascending: true);
+      _userDevices = List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error fetching user devices: $e');
+      _userDevices = [];
+    }
+    _setLoading(false);
+  }
+
+  Future<String?> addUserDevice(String deviceId, String deviceName) async {
+    if (_currentUser == null) return "User not logged in.";
+    _setLoading(true);
+    try {
+      final deviceExists = await supabase
           .from('device_status')
           .select('device_id')
           .eq('device_id', deviceId)
           .maybeSingle();
 
-      if (response == null) {
+      if (deviceExists == null) {
         _setLoading(false);
-        return false;
+        return "Device ID tidak ditemukan. Pastikan perangkat Anda sudah online setidaknya sekali.";
       }
 
-      _deviceId = deviceId;
-      await fetchInitialData();
-      _listenToRealtimeChanges();
-      notifyListeners();
-      _setLoading(false);
-      return true;
+      await supabase.from('user_devices').insert({
+        'user_id': _currentUser!.id,
+        'device_id': deviceId,
+        'device_name': deviceName,
+      });
+
+      await fetchUserDevices();
+      return null;
+    } on PostgrestException catch (e) {
+      if (e.code == '23505') {
+        return "Perangkat ini sudah ada di dalam daftar Anda.";
+      }
+      return e.message;
     } catch (e) {
-      print('Error validating device ID: $e');
+      return 'Terjadi kesalahan tidak terduga.';
+    } finally {
       _setLoading(false);
-      return false;
     }
   }
 
-  Future<void> fetchInitialData() async {
-    if (_deviceId == null) return;
+  Future<String?> removeUserDevice(int id) async {
+    if (_currentUser == null) return "User not logged in.";
+    _setLoading(true);
+    try {
+      await supabase.from('user_devices').delete().eq('id', id);
+      await fetchUserDevices();
+      return null;
+    } catch (e) {
+      return "Gagal menghapus perangkat.";
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<void> selectDevice(Map<String, dynamic> device) async {
+    _setLoading(true);
+    _selectedDevice = device;
+    await fetchInitialDataForSelectedDevice();
+    _listenToRealtimeChanges();
+    _setLoading(false);
+  }
+
+  void deselectDevice() {
+    _selectedDevice = null;
+    _events.clear();
+    _deviceStatus = null;
+    _unsubscribeFromChannels();
+    notifyListeners();
+  }
+
+  Future<void> fetchInitialDataForSelectedDevice() async {
+    if (selectedDeviceId == null) return;
     _setLoading(true);
     await Future.wait([
       fetchEvents(),
@@ -96,13 +166,14 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchEvents() async {
-    if (_deviceId == null) return;
+    if (selectedDeviceId == null) return;
     try {
       final response = await supabase
           .from('events')
           .select()
-          .eq('device_id', _deviceId!)
-          .order('timestamp', ascending: false);
+          .eq('device_id', selectedDeviceId!)
+          .order('timestamp', ascending: false)
+          .limit(50); // Batasi jumlah event awal
       _events = List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Error fetching events: $e');
@@ -112,12 +183,12 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> fetchDeviceStatus() async {
-    if (_deviceId == null) return;
+    if (selectedDeviceId == null) return;
     try {
       final response = await supabase
           .from('device_status')
           .select()
-          .eq('device_id', _deviceId!)
+          .eq('device_id', selectedDeviceId!)
           .single();
       _deviceStatus = response;
     } catch (e) {
@@ -128,10 +199,11 @@ class AppState extends ChangeNotifier {
   }
 
   void _listenToRealtimeChanges() {
-    if (_deviceId == null) return;
+    if (selectedDeviceId == null) return;
     _unsubscribeFromChannels();
 
-    _eventsChannel = supabase.channel('public:events:device_id=$_deviceId');
+    _eventsChannel =
+        supabase.channel('public:events:device_id=$selectedDeviceId');
     _eventsChannel!
         .onPostgresChanges(
           event: PostgresChangeEvent.insert,
@@ -140,7 +212,7 @@ class AppState extends ChangeNotifier {
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'device_id',
-            value: _deviceId!,
+            value: selectedDeviceId!,
           ),
           callback: (payload) {
             final newEvent = payload.newRecord;
@@ -153,16 +225,17 @@ class AppState extends ChangeNotifier {
         .subscribe();
 
     _deviceStatusChannel =
-        supabase.channel('public:device_status:device_id=$_deviceId');
+        supabase.channel('public:device_status:device_id=$selectedDeviceId');
     _deviceStatusChannel!
         .onPostgresChanges(
-          event: PostgresChangeEvent.update,
+          event: PostgresChangeEvent
+              .all, // Dengarkan semua perubahan (insert/update)
           schema: 'public',
           table: 'device_status',
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'device_id',
-            value: _deviceId!,
+            value: selectedDeviceId!,
           ),
           callback: (payload) {
             _deviceStatus = payload.newRecord;
@@ -175,32 +248,25 @@ class AppState extends ChangeNotifier {
   Future<void> signOut() async {
     _setLoading(true);
     await supabase.auth.signOut();
-    // clearState() akan dipanggil oleh listener onAuthStateChange
     _setLoading(false);
   }
 
   Future<String?> setSleepSchedule(int durationMicroseconds) async {
-    if (_deviceId == null) {
-      return "Device not identified.";
-    }
+    if (selectedDeviceId == null) return "Device not identified.";
     _setLoading(true);
-
     try {
       await supabase.from('device_status').update({
-        'schedule_duration_microseconds': durationMicroseconds,
+        'schedule_duration': durationMicroseconds,
         'last_update': DateTime.now().toIso8601String(),
-      }).eq('device_id', _deviceId!);
-
-      _setLoading(false);
+      }).eq('device_id', selectedDeviceId!);
+      await fetchDeviceStatus();
       return null;
     } on PostgrestException catch (e) {
-      _setLoading(false);
-      print('Error setting sleep schedule: ${e.message}');
       return e.message;
     } catch (e) {
-      _setLoading(false);
-      print('Generic error setting sleep schedule: $e');
       return 'An unexpected error occurred.';
+    } finally {
+      _setLoading(false);
     }
   }
 }

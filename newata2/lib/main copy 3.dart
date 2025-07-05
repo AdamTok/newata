@@ -699,11 +699,13 @@ class HomePage extends StatelessWidget {
           },
         ),
       ),
+      // === PERUBAHAN: MENGGUNAKAN RefreshIndicator ===
       body: RefreshIndicator(
         onRefresh: () => appState.fetchInitialDataForSelectedDevice(),
         child: appState.isLoading && appState.events.isEmpty
             ? const Center(child: CircularProgressIndicator())
             : ListView(
+                // Menggunakan ListView agar bisa di-scroll
                 children: [
                   const DeviceStatusCard(),
                   if (appState.events.isEmpty)
@@ -721,6 +723,7 @@ class HomePage extends StatelessWidget {
   }
 }
 
+// === PERUBAHAN: DESAIN ULANG DeviceStatusCard ===
 class DeviceStatusCard extends StatelessWidget {
   const DeviceStatusCard({super.key});
 
@@ -878,7 +881,7 @@ class DeviceStatusCard extends StatelessWidget {
               children: [
                 Row(
                   mainAxisAlignment:
-                      MainAxisAlignment.center,
+                      MainAxisAlignment.center, // Menggeser status ke tengah
                   children: [
                     Icon(statusIcon, color: statusColor, size: 28),
                     const SizedBox(width: 12),
@@ -911,6 +914,7 @@ class DeviceStatusCard extends StatelessWidget {
                                     : Colors.white70)),
                       ],
                     ),
+                    // === PERUBAHAN: Tombol Set Timer dengan UI Lock ===
                     ElevatedButton.icon(
                       icon: const Icon(CupertinoIcons.timer, size: 16),
                       label: const Text('Set Timer'),
@@ -936,19 +940,18 @@ class DeviceStatusCard extends StatelessWidget {
   }
 }
 
-// === WIDGET DENGAN PERBAIKAN UTAMA ===
+// === PERUBAHAN: Perbaikan pada EventCard ===
 class EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
   const EventCard({super.key, required this.event});
 
-  // PERBAIKAN #1: Fungsi _getImageUrl() telah dihapus.
-  // Alasan: Kolom 'image_ref' di database Anda sudah berisi URL publik yang lengkap.
-  // Memanggil supabase.storage.from(...).getPublicUrl() akan membuat URL menjadi ganda dan tidak valid.
-  // Contoh URL tidak valid: https://<...>.co/storage/v1/object/public/captured/https://<...>.co/storage/v1/object/public/captured/image.jpg
-  // Kita hanya perlu menggunakan nilai dari 'image_ref' secara langsung.
+  String _getImageUrl(String imageRef) {
+    return supabase.storage.from('captured').getPublicUrl(imageRef);
+  }
 
   @override
   Widget build(BuildContext context) {
+    // === PERBAIKAN: Menggunakan type casting untuk keamanan ===
     final eventType = event['event_type'] as String?;
     final location = event['location'] as String? ?? 'Unknown Location';
     final timestampStr = event['timestamp'] as String?;
@@ -957,21 +960,16 @@ class EventCard extends StatelessWidget {
         : DateTime.now();
     final formattedTime =
         DateFormat('EEEE, d MMMM yyyy, HH:mm:ss', 'id_ID').format(timestamp);
-    
-    // PERBAIKAN #1 (Lanjutan): Langsung gunakan 'image_ref' sebagai imageUrl.
     final imageRef = event['image_ref'] as String?;
-    final imageUrl = imageRef; // Tidak perlu pemrosesan lagi
+    final imageUrl =
+        imageRef != null && imageRef.isNotEmpty ? _getImageUrl(imageRef) : null;
 
     final String displayEventType;
     final Color eventColor;
-    
-    // PERBAIKAN #2: Mencocokkan nilai 'event_type' dengan yang dikirim oleh ESP32.
-    // ESP32 mengirim "motion" dan "vibration". Kode sebelumnya memeriksa "motion_detected"
-    // dan "vibration_detected", yang menyebabkan selalu jatuh ke 'Unknown Event'.
-    if (eventType == 'motion') {
+    if (eventType == 'motion_detected') {
       displayEventType = 'Motion Detected';
       eventColor = Colors.orange;
-    } else if (eventType == 'vibration') {
+    } else if (eventType == 'vibration_detected') {
       displayEventType = 'Vibration Detected';
       eventColor = Colors.purpleAccent;
     } else {
@@ -985,7 +983,7 @@ class EventCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (imageUrl != null && imageUrl.isNotEmpty)
+          if (imageUrl != null)
             InkWell(
               onTap: () => showDialog(
                   context: context,
@@ -1006,18 +1004,13 @@ class EventCard extends StatelessWidget {
                 height: 200,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  // Tambahkan print untuk debugging jika gambar masih gagal dimuat
-                  print("Error loading image: $error");
-                  print("Image URL: $imageUrl");
-                  return Container(
-                    height: 200,
-                    color: Colors.black26,
-                    child: const Center(
-                        child: Icon(Icons.broken_image,
-                            color: Colors.white30, size: 40)),
-                  );
-                },
+                errorBuilder: (context, error, stackTrace) => Container(
+                  height: 200,
+                  color: Colors.black26,
+                  child: const Center(
+                      child: Icon(Icons.broken_image,
+                          color: Colors.white30, size: 40)),
+                ),
               ),
             ),
           Padding(

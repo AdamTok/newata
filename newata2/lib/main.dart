@@ -48,6 +48,7 @@ class MyApp extends StatelessWidget {
           secondary: Colors.teal,
           surface: Color(0xFF2c2c2c),
           onSurface: Colors.white,
+          error: Colors.redAccent,
         ),
         textTheme: const TextTheme(
           bodyLarge: TextStyle(color: Colors.white70),
@@ -65,13 +66,8 @@ class MyApp extends StatelessWidget {
             labelStyle: const TextStyle(color: Colors.white54)),
         useMaterial3: true,
       ),
-      home: const AuthWrapper(), // Menggunakan AuthWrapper untuk logika awal
+      home: const AuthWrapper(),
       debugShowCheckedModeBanner: false,
     );
   }
 }
-
-
-// SUPABASE_URL=https://ihuetazxejsioxcjejpj.supabase.co
-// SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlodWV0YXp4ZWpzaW94Y2planBqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTExMDEyMTgsImV4cCI6MjA2NjY3NzIxOH0.IKFyrKioiScfAS_9UouPEcesHHoas0SDZH0mZBCA1ro
-

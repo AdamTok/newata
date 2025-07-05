@@ -256,7 +256,7 @@ class AppState extends ChangeNotifier {
 
     try {
       await supabase.from('device_status').update({
-        'schedule_duration_microseconds': durationMicroseconds,
+        'schedule_duration': durationMicroseconds,
         'last_update': DateTime.now().toIso8601String(),
       }).eq('device_id', _deviceId!);
 
